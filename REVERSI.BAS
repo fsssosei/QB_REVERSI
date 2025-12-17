@@ -16,8 +16,6 @@ CONST BLACKWIN = -1, EQUAL = 0, WHITEWIN = 1
 CONST BLANK = -1, BLACKSTONE = 0, WHITESTONE = 1
 CONST BEFORETIME = 0, NOWTIME = 1
 CONST ORIGINALSCREEN = -1, BLACKSTATESCREEN = 0, WHITESTATESCREEN = 1, BOARDSCREEN = 2, BUTTONSCREEN = 3
-CONST EVENTOFF = -1, EVENTSTOP = 0, EVENTON = 1
-CONST TRAPINIT = -1, TRAPOFF = 0, TRAPON = 1
 CONST SET = 0, USE = 1
 CONST TRUE = -1, FALSE = 0
 CONST SHOW = 1, DISAPPEAR = 0
@@ -67,16 +65,12 @@ DIM SHARED recordmovesx(1 TO MAXMOVES) AS INTEGER
 DIM SHARED recordmovesy(1 TO MAXMOVES) AS INTEGER
 DIM SHARED recordmovesside(1 TO MAXMOVES) AS INTEGER
 
-' ========== 新增函数声明 ==========
 DECLARE FUNCTION GetRawKey ()
 DECLARE SUB GetBoardInput (x AS INTEGER, y AS INTEGER, confirmed AS INTEGER, nowside AS INTEGER, board() AS INTEGER)
-' =================================
-
 DECLARE FUNCTION GetInputWithBlink$ (prompt AS STRING, row AS INTEGER, col AS INTEGER, maxlen AS INTEGER, acceptkeys AS STRING, waitenter AS INTEGER)
 DECLARE SUB RandomSide (gameorder AS INTEGER, bothname() AS PLAYDATA)
 DECLARE SUB InputName (humanside AS INTEGER, bothname() AS PLAYDATA)
 DECLARE SUB ReversiScreen (screentype AS INTEGER, screenstate AS INTEGER)
-DECLARE SUB TrapControl (control AS INTEGER)
 DECLARE SUB BoardInit (board() AS INTEGER)
 DECLARE SUB StoneNumShow (board() AS INTEGER, stonenum() AS INTEGER)
 DECLARE SUB FaceShow (nowside AS INTEGER, facetype AS INTEGER)
@@ -95,7 +89,6 @@ DECLARE FUNCTION LetterRange$ (startchar AS STRING, endchar AS STRING)
 DECLARE FUNCTION FormatDateYYYYMMDD$ (datestr AS STRING)
 DECLARE FUNCTION WinSideJudge (nowside AS INTEGER, notime AS INTEGER, accpetlose AS INTEGER, stonenum() AS INTEGER)
 DECLARE SUB WinShow (winside AS INTEGER)
-DECLARE SUB Resign (accpetlose AS INTEGER)
 DECLARE SUB Quit (choose AS INTEGER)
 DECLARE SUB InitGameRecord (record AS GAMERECORD, bothname() AS PLAYDATA)
 DECLARE SUB AddMoveToRecord (nowside AS INTEGER, x AS INTEGER, y AS INTEGER)
@@ -105,8 +98,6 @@ DECLARE SUB SaveGameRecord (record AS GAMERECORD)
 DIM nn AS STRING
 DIM nowscreen AS INTEGER
 DIM gameorder AS INTEGER
-DIM timetrap AS INTEGER
-DIM keytrap AS INTEGER
 DIM bothname(BLACKSIDE TO WHITESIDE) AS PLAYDATA
 DIM stonenum(BLACKSIDE TO WHITESIDE) AS INTEGER
 DIM unitime(BLACKSIDE TO WHITESIDE, BEFORETIME TO NOWTIME) AS LONG
@@ -131,11 +122,6 @@ ON TIMER(SECOND) GOSUB Clocklabel
 ON KEY(10) GOSUB keylabel
 DO
     CLS
-    TIMER OFF
-    timetrap = EVENTOFF
-    KEY(10) OFF
-    keytrap = EVENTOFF
-    CALL TrapControl(TRAPINIT)
     LOCATE COPYRIGHTROW, 3: PRINT COPYRIGHTNUMBER; "   "; COPYRIGHT;
     CALL RandomSide(gameorder, bothname())
     stonenum(BLACKSIDE) = 0
@@ -175,7 +161,6 @@ DO
     CALL InitGameRecord(currentgame, bothname())
    
     gameorder = gameorder + 1
-    keytrap = EVENTON
     KEY(10) ON
     PLAY "c8d8"
     DO UNTIL nowside = OVER
@@ -185,21 +170,16 @@ DO
         ELSEIF bothname(nowside).playtype = COMPUTER THEN
             CALL ComputerThink(nowside, board(), x, y)
         END IF
-        CALL Clock(nowside, REST, FALSE, unitime(), extratime(), notime)
         CALL FaceShow(nowside, REPOSE)
         CALL TurnStone(board(), x, y)
         CALL StoneNumShow(board(), stonenum())
-
         CALL AddMoveToRecord(nowside, x, y)
-      
         CALL OverJudge(nowside, board())
     LOOP
 
-    overlabel:
+overlabel:
     TIMER OFF
-    timetrap = EVENTOFF
     KEY(10) OFF
-    keytrap = EVENTOFF
     winside = WinSideJudge(nowside, notime, accpetlose, stonenum())
    
     IF accpetlose = TRUE THEN
@@ -222,170 +202,31 @@ CLS
 END
 
 Clocklabel:
-timetrap = EVENTSTOP
+KEY(10) STOP
 CALL Clock(nowside, TURN, TRUE, unitime(), extratime(), notime)
 IF notime = FALSE THEN
-    timetrap = EVENTON
+    KEY(10) ON
     RETURN
 ELSEIF notime = TRUE THEN
     nowside = OVER
-    timetrap = EVENTOFF
     RETURN overlabel
 END IF
 
 keylabel:
-keytrap = EVENTOFF
+TIMER OFF
 KEY(10) OFF
-CALL Resign(accpetlose)
-IF accpetlose = FALSE THEN
-    keytrap = EVENTON
-    RETURN
-ELSEIF accpetlose = TRUE THEN
-    keytrap = EVENTOFF
-    RETURN overlabel
-END IF
+accpetlose = TRUE
+RETURN overlabel
 
-' ========== 核心键盘函数 ==========
-FUNCTION GetRawKey ()
-    DIM check AS STRING
-    
-    check = INKEY$
-    IF check = "" THEN
-        GetRawKey = 0 ' 没有按键
-    ELSE
-        IF ASC(check) = 0 AND LEN(check) > 1 THEN
-            GetRawKey = ASC(MID$(check, 2, 1)) + 256' 扩展键
-        ELSE
-            GetRawKey = ASC(check) ' 普通键
-        END IF
+SUB AddMoveToRecord (nowside AS INTEGER, x AS INTEGER, y AS INTEGER)
+    SHARED currentgame AS GAMERECORD
+   
+    currentgame.movecount = currentgame.movecount + 1
+    IF currentgame.movecount <= MAXMOVES THEN
+        recordmovesx(currentgame.movecount) = x
+        recordmovesy(currentgame.movecount) = y
+        recordmovesside(currentgame.movecount) = nowside
     END IF
-END FUNCTION
-
-' ========== 修改后的 GetInputWithBlink$ 函数 ==========
-FUNCTION GetInputWithBlink$ (prompt AS STRING, row AS INTEGER, col AS INTEGER, maxlen AS INTEGER, acceptkeys AS STRING, waitenter AS INTEGER)
-    CONST twinkletime = 1 / 6
-    DIM reftime AS SINGLE
-    DIM timebalance AS SINGLE
-    DIM cw AS STRING * 1
-    DIM ct AS STRING * 1
-    DIM keycode AS INTEGER
-    DIM keychar AS STRING
-    DIM result AS STRING
-    DIM i AS INTEGER
-    
-    result = ""
-    i = 0
-    cw = "?"
-    ct = " "
-    reftime = TIMER
-    
-    DO
-        LOCATE row, col: PRINT prompt + result + cw + SPACE$(maxlen - LEN(prompt + result + cw));
-        timebalance = TIMER - reftime
-        timebalance = timebalance + DAY
-        timebalance = timebalance - FIX(timebalance / DAY) * DAY
-        IF timebalance >= twinkletime THEN
-            SWAP cw, ct
-            reftime = TIMER
-        END IF
-        
-        keycode = GetRawKey
-        
-        IF keycode > 0 AND keycode < 256 THEN
-            keychar = CHR$(keycode)
-            IF keycode = KEYENTER THEN
-                EXIT DO
-            ELSEIF keycode = KEYBACKSPACE AND i > 0 THEN
-                i = i - 1
-                result = LEFT$(result, i)
-            ELSEIF INSTR(acceptkeys, keychar) > 0 THEN
-                result = result + keychar
-                i = i + 1
-                ' 如果不需要等待回车键，输入一个字符后立即退出
-                IF waitenter = FALSE THEN
-                    EXIT DO
-                END IF
-            END IF
-        END IF
-    LOOP UNTIL i = maxlen
-
-    GetInputWithBlink = result
-END FUNCTION
-
-' ========== 棋盘输入函数 ==========
-SUB GetBoardInput (x AS INTEGER, y AS INTEGER, confirmed AS INTEGER, nowside AS INTEGER, board() AS INTEGER)
-    CONST twinkletime = 1 / 3
-    DIM keycode AS INTEGER
-    DIM cursorvisible AS INTEGER
-    DIM lastblinktime AS SINGLE
-    DIM needredraw AS INTEGER
-    
-    confirmed = FALSE
-    cursorvisible = SHOW
-    lastblinktime = TIMER
-    needredraw = TRUE
-    
-    DO
-        ' 处理光标闪烁
-        IF TIMER - lastblinktime >= twinkletime THEN
-            cursorvisible = 1 - cursorvisible
-            needredraw = TRUE
-            lastblinktime = TIMER
-        END IF
-        
-        IF needredraw THEN
-            CALL LightMark(nowside, board(x, y), x, y, cursorvisible)
-            needredraw = FALSE
-        END IF
-        
-        ' 检测按键
-        keycode = GetRawKey
-        
-        IF keycode > 0 THEN
-            ' 先隐藏当前光标
-            CALL LightMark(nowside, board(x, y), x, y, DISAPPEAR)
-            
-            ' 处理方向键 - 修正为你的原始逻辑
-            SELECT CASE keycode
-                CASE KEYLEFT
-                    x = x - 1
-                    IF x < 1 THEN x = BOARDSIZE
-                CASE KEYRIGHT
-                    x = x + 1
-                    IF x > BOARDSIZE THEN x = 1
-                CASE KEYUP
-                    y = y + 1   ' 你的原始逻辑：UP键y+1
-                    IF y > BOARDSIZE THEN y = 1
-                CASE KEYDOWN
-                    y = y - 1   ' 你的原始逻辑：DOWN键y-1
-                    IF y < 1 THEN y = BOARDSIZE
-                CASE KEYENTER
-                    confirmed = TRUE
-                    EXIT DO
-            END SELECT
-            needredraw = TRUE
-        END IF
-    LOOP
-    
-    ' 退出前确保光标隐藏
-    CALL LightMark(nowside, board(x, y), x, y, DISAPPEAR)
-END SUB
-
-SUB Resign (accpetlose AS INTEGER)
-    DIM check AS STRING
-    LOCATE MESSAGE1ROW, 1
-    PRINT SPACE$(MSGLINEWIDTH);
-    
-    check = UCASE$(GetInputWithBlink("Resign(Y/N)", MESSAGE1ROW, 1, 1, "YNyn", FALSE))
-    
-    IF check = "Y" THEN
-        accpetlose = TRUE
-    ELSE
-        accpetlose = FALSE
-    END IF
-    
-    LOCATE MESSAGE1ROW, 1
-    PRINT SPACE$(MSGLINEWIDTH);
 END SUB
 
 SUB BoardInit (board() AS INTEGER)
@@ -467,329 +308,6 @@ FUNCTION CheckPlace (nowside AS INTEGER, board() AS INTEGER, x AS INTEGER, y AS 
     
     CheckPlace = FALSE
 END FUNCTION
-
-FUNCTION GetValidMoves (nowside AS INTEGER, board() AS INTEGER, moves() AS MOVE)
-    DIM x AS INTEGER, y AS INTEGER
-    DIM count AS INTEGER
-   
-    count = 0
-    FOR x = 1 TO BOARDSIZE
-        FOR y = 1 TO BOARDSIZE
-            IF board(x, y) = BLANK THEN
-                IF CheckPlace(nowside, board(), x, y) THEN
-                    count = count + 1
-                    moves(count).x = x
-                    moves(count).y = y
-                END IF
-            END IF
-        NEXT y
-    NEXT x
-   
-    GetValidMoves = count
-END FUNCTION
-
-FUNCTION EvaluatePosition (board() AS INTEGER, nowside AS INTEGER, x AS INTEGER, y AS INTEGER)
-
-    DIM score AS INTEGER
-    DIM stone AS INTEGER
-    DIM oppstone AS INTEGER
-    DIM dx AS INTEGER, dy AS INTEGER
-    DIM i AS INTEGER, j AS INTEGER
-    DIM flipped AS INTEGER
-   
-    IF nowside = BLACKSIDE THEN
-        stone = BLACKSTONE
-        oppstone = WHITESTONE
-    ELSE
-        stone = WHITESTONE
-        oppstone = BLACKSTONE
-    END IF
-   
-    score = 0
-   
-    flipped = 0
-    FOR dx = -1 TO 1
-        FOR dy = -1 TO 1
-            IF NOT (dx = 0 AND dy = 0) THEN
-                i = x + dx
-                j = y + dy
-                IF i >= 1 AND i <= BOARDSIZE AND j >= 1 AND j <= BOARDSIZE THEN
-                    IF board(i, j) = oppstone THEN
-                        i = i + dx
-                        j = j + dy
-                        DO WHILE i >= 1 AND i <= BOARDSIZE AND j >= 1 AND j <= BOARDSIZE
-                            IF board(i, j) = stone THEN
-                                flipped = flipped + ABS(x - i) + ABS(y - j) - 1
-                                EXIT DO
-                            ELSEIF board(i, j) = BLANK THEN
-                                EXIT DO
-                            END IF
-                            i = i + dx
-                            j = j + dy
-                        LOOP
-                    END IF
-                END IF
-            END IF
-        NEXT dy
-    NEXT dx
-   
-    score = score + flipped
-   
-    IF (x = 1 AND y = 1) OR (x = 1 AND y = BOARDSIZE) OR (x = BOARDSIZE AND y = 1) OR (x = BOARDSIZE AND y = BOARDSIZE) THEN
-        score = score + 100
-    END IF
-   
-    IF x = 1 OR x = BOARDSIZE OR y = 1 OR y = BOARDSIZE THEN
-        score = score + 10
-    END IF
-   
-    IF (x = 2 AND y = 2) OR (x = 2 AND y = BOARDSIZE - 1) OR (x = BOARDSIZE - 1 AND y = 2) OR (x = BOARDSIZE - 1 AND y = BOARDSIZE - 1) THEN
-        score = score - 50
-    END IF
-   
-    IF (x = 1 AND (y = 2 OR y = BOARDSIZE - 1)) OR (x = BOARDSIZE AND (y = 2 OR y = BOARDSIZE - 1)) OR (y = 1 AND (x = 2 OR x = BOARDSIZE - 1)) OR (y = BOARDSIZE AND (x = 2 OR x = BOARDSIZE - 1)) THEN
-        score = score - 30
-    END IF
-   
-    IF x >= 3 AND x <= BOARDSIZE - 2 AND y >= 3 AND y <= BOARDSIZE - 2 THEN
-        score = score + 5
-    END IF
-   
-    EvaluatePosition = score
-END FUNCTION
-
-SUB ComputerThink (nowside AS INTEGER, board() AS INTEGER, x AS INTEGER, y AS INTEGER)
-    SHARED timetrap AS INTEGER
-   
-    DIM moves(1 TO BOARDSIZE * BOARDSIZE) AS MOVE
-    DIM movecount AS INTEGER
-    DIM i AS INTEGER
-    DIM bestmove AS INTEGER
-    DIM bestscore AS INTEGER
-    DIM currentscore AS INTEGER
-   
-    timetrap = EVENTON
-    TIMER ON
-   
-    movecount = GetValidMoves(nowside, board(), moves())
-   
-    IF movecount = 0 THEN
-        TIMER OFF
-        timetrap = EVENTOFF
-        EXIT SUB
-    END IF
-   
-    bestmove = 1
-    bestscore = EvaluatePosition(board(), nowside, moves(1).x, moves(1).y)
-   
-    FOR i = 2 TO movecount
-        currentscore = EvaluatePosition(board(), nowside, moves(i).x, moves(i).y)
-        IF currentscore > bestscore THEN
-            bestscore = currentscore
-            bestmove = i
-        END IF
-    NEXT i
-   
-    RANDOMIZE TIMER
-    IF RND < 0.2 THEN
-        bestmove = INT(RND * movecount) + 1
-    END IF
-   
-    x = moves(bestmove).x
-    y = moves(bestmove).y
-   
-    IF nowside = BLACKSIDE THEN
-        board(x, y) = BLACKSTONE
-    ELSEIF nowside = WHITESIDE THEN
-        board(x, y) = WHITESTONE
-    END IF
-
-    TIMER OFF
-    timetrap = EVENTOFF
-    CALL StoneShow(board(x, y), x, y)
-END SUB
-
-' ========== 修改后的 HumanThink ==========
-SUB HumanThink (nowside AS INTEGER, board() AS INTEGER, x AS INTEGER, y AS INTEGER)
-    SHARED timetrap AS INTEGER
-    DIM confirmed AS INTEGER
-    DIM validmove AS INTEGER
-    
-    timetrap = EVENTON
-    TIMER ON
-    
-    ' 清空消息行
-    LOCATE MESSAGE1ROW, 1
-    PRINT SPACE$(MSGLINEWIDTH);
-    
-    DO
-        confirmed = FALSE
-        CALL GetBoardInput(x, y, confirmed, nowside, board())
-        
-        IF confirmed THEN
-            validmove = CheckPlace(nowside, board(), x, y)
-            
-            IF validmove THEN
-                ' 有效落子
-                EXIT DO
-            ELSE
-                ' 无效落子提示
-                BEEP
-            END IF
-        END IF
-    LOOP
-    
-    ' 处理有效落子
-    TIMER OFF
-    timetrap = EVENTOFF
-    
-    IF nowside = BLACKSIDE THEN
-        board(x, y) = BLACKSTONE
-    ELSEIF nowside = WHITESIDE THEN
-        board(x, y) = WHITESTONE
-    END IF
-    
-    CALL StoneShow(board(x, y), x, y)
-END SUB
-
-FUNCTION FormatDateYYYYMMDD$ (datestr AS STRING)
-    DIM MonthDayPart AS STRING
-    DIM YearPart AS STRING
-   
-    YearPart = RIGHT$(datestr, 4)
-    MonthDayPart = LEFT$(datestr, 5)
-   
-    FormatDateYYYYMMDD = YearPart + "-" + MonthDayPart
-END FUNCTION
-
-SUB InitGameRecord (record AS GAMERECORD, bothname() AS PLAYDATA)
-    record.version = RECORDVERSION
-    record.blackname = bothname(BLACKSIDE).playname
-    record.whitename = bothname(WHITESIDE).playname
-    record.blacktype = bothname(BLACKSIDE).playtype
-    record.whitetype = bothname(WHITESIDE).playtype
-    record.movecount = 0
-    record.winner = EQUAL
-    record.blackstones = 0
-    record.whitestones = 0
-    record.gamedate = FormatDateYYYYMMDD$(DATE$)
-    record.gametime = TIME$
-    record.endreason = "NORMAL_END"
-   
-    FOR i = 1 TO MAXMOVES
-        recordmovesx(i) = 0
-        recordmovesy(i) = 0
-        recordmovesside(i) = 0
-    NEXT i
-END SUB
-
-SUB AddMoveToRecord (nowside AS INTEGER, x AS INTEGER, y AS INTEGER)
-    SHARED currentgame AS GAMERECORD
-   
-    currentgame.movecount = currentgame.movecount + 1
-    IF currentgame.movecount <= MAXMOVES THEN
-        recordmovesx(currentgame.movecount) = x
-        recordmovesy(currentgame.movecount) = y
-        recordmovesside(currentgame.movecount) = nowside
-    END IF
-END SUB
-
-SUB FinalizeGameRecord (record AS GAMERECORD, winside AS INTEGER, stonenum() AS INTEGER, endreason AS STRING)
-    record.winner = winside
-    record.blackstones = stonenum(BLACKSIDE)
-    record.whitestones = stonenum(WHITESIDE)
-    record.endreason = endreason
-END SUB
-
-SUB SaveGameRecord (record AS GAMERECORD)
-    DIM fileNum AS INTEGER
-    DIM i AS INTEGER
-    DIM blackname AS STRING
-    DIM whitename AS STRING
-    DIM resulttext AS STRING
-    DIM sidechar AS STRING
-    DIM colletter AS STRING
-    DIM rownum AS STRING
-    DIM reasontext AS STRING
-   
-    fileNum = FREEFILE
-   
-    OPEN RECORDFILENAME FOR APPEND AS fileNum
-   
-    blackname = RTRIM$(record.blackname)
-    whitename = RTRIM$(record.whitename)
-    IF blackname = "" THEN blackname = "Black"
-    IF whitename = "" THEN whitename = "White"
-   
-    PRINT #fileNum, "=============================="
-    PRINT #fileNum, "Version: "; LTRIM$(STR$(record.version))
-    PRINT #fileNum, "Game: "; record.gamedate; " "; record.gametime
-    PRINT #fileNum, "Players:"
-    PRINT #fileNum, "  Black: "; blackname;
-    IF record.blacktype = COMPUTER THEN PRINT #fileNum, " (Computer)" ELSE PRINT #fileNum, " (Human)"
-    PRINT #fileNum, "  White: "; whitename;
-    IF record.whitetype = COMPUTER THEN PRINT #fileNum, " (Computer)" ELSE PRINT #fileNum, " (Human)"
-    PRINT #fileNum, "Board: "; LTRIM$(STR$(BOARDSIZE)); "x"; LTRIM$(STR$(BOARDSIZE))
-    PRINT #fileNum, ""
-   
-    PRINT #fileNum, "Moves ("; record.movecount; "moves):"
-   
-    FOR i = 1 TO record.movecount
-        IF recordmovesside(i) = BLACKSIDE THEN
-            sidechar = "Black"
-        ELSE
-            sidechar = "White"
-        END IF
-      
-        colletter = CHR$(ASC("a") + (recordmovesx(i) - 1))
-        rownum = LTRIM$(STR$(recordmovesy(i)))
-      
-        IF i MOD 2 = 1 THEN
-            PRINT #fileNum, USING "####: & &&"; i; sidechar; colletter; rownum;
-        ELSE
-            PRINT #fileNum, USING " - & &&"; sidechar; colletter; rownum
-        END IF
-    NEXT i
-   
-    IF record.movecount MOD 2 = 1 THEN
-        PRINT #fileNum, ""
-    END IF
-   
-    PRINT #fileNum, ""
-    PRINT #fileNum, "Result:"
-   
-    SELECT CASE record.winner
-        CASE BLACKWIN
-            resulttext = "Black wins"
-        CASE WHITEWIN
-            resulttext = "White wins"
-        CASE EQUAL
-            resulttext = "Draw"
-    END SELECT
-   
-    PRINT #fileNum, "  "; resulttext
-    PRINT #fileNum, "  Black stones: "; LTRIM$(STR$(record.blackstones))
-    PRINT #fileNum, "  White stones: "; LTRIM$(STR$(record.whitestones))
-    PRINT #fileNum, "  Final score: "; LTRIM$(STR$(record.blackstones)); " - "; LTRIM$(STR$(record.whitestones))
-    SELECT CASE record.endreason
-        CASE "NORMAL_END"
-            reasontext = "Normal end"
-        CASE "TIME_OUT"
-            reasontext = "Time out"
-        CASE "RESIGN"
-            reasontext = "Resignation"
-    END SELECT
-    PRINT #fileNum, "  End reason: "; reasontext
-    PRINT #fileNum, "=============================="
-    PRINT #fileNum, ""
-   
-    CLOSE fileNum
-   
-    LOCATE MESSAGE1ROW, 1
-    PRINT SPACE$(MSGLINEWIDTH);
-    LOCATE MESSAGE1ROW, 1
-    PRINT "Game saved to "; RECORDFILENAME
-END SUB
 
 SUB Clock (nowside AS INTEGER, clockstate AS INTEGER, recoverscreen AS INTEGER, unitime() AS LONG, extratime() AS LONG, notime AS INTEGER) STATIC
     CONST SA = CIRCLEANGLE / MINUTE
@@ -946,6 +464,123 @@ SUB Clock (nowside AS INTEGER, clockstate AS INTEGER, recoverscreen AS INTEGER, 
     END IF
 END SUB
 
+SUB ComputerThink (nowside AS INTEGER, board() AS INTEGER, x AS INTEGER, y AS INTEGER)
+   
+    DIM moves(1 TO BOARDSIZE * BOARDSIZE) AS MOVE
+    DIM movecount AS INTEGER
+    DIM i AS INTEGER
+    DIM bestmove AS INTEGER
+    DIM bestscore AS INTEGER
+    DIM currentscore AS INTEGER
+    
+    TIMER ON
+    
+    movecount = GetValidMoves(nowside, board(), moves())
+   
+    IF movecount = 0 THEN
+        EXIT SUB
+    END IF
+   
+    bestmove = 1
+    bestscore = EvaluatePosition(board(), nowside, moves(1).x, moves(1).y)
+   
+    FOR i = 2 TO movecount
+        currentscore = EvaluatePosition(board(), nowside, moves(i).x, moves(i).y)
+        IF currentscore > bestscore THEN
+            bestscore = currentscore
+            bestmove = i
+        END IF
+    NEXT i
+   
+    RANDOMIZE TIMER
+    IF RND < .2 THEN
+        bestmove = INT(RND * movecount) + 1
+    END IF
+   
+    x = moves(bestmove).x
+    y = moves(bestmove).y
+    
+    
+    IF nowside = BLACKSIDE THEN
+        board(x, y) = BLACKSTONE
+    ELSEIF nowside = WHITESIDE THEN
+        board(x, y) = WHITESTONE
+    END IF
+    
+    TIMER OFF
+    CALL StoneShow(board(x, y), x, y)
+END SUB
+
+FUNCTION EvaluatePosition (board() AS INTEGER, nowside AS INTEGER, x AS INTEGER, y AS INTEGER)
+
+    DIM score AS INTEGER
+    DIM stone AS INTEGER
+    DIM oppstone AS INTEGER
+    DIM dx AS INTEGER, dy AS INTEGER
+    DIM i AS INTEGER, j AS INTEGER
+    DIM flipped AS INTEGER
+   
+    IF nowside = BLACKSIDE THEN
+        stone = BLACKSTONE
+        oppstone = WHITESTONE
+    ELSE
+        stone = WHITESTONE
+        oppstone = BLACKSTONE
+    END IF
+   
+    score = 0
+   
+    flipped = 0
+    FOR dx = -1 TO 1
+        FOR dy = -1 TO 1
+            IF NOT (dx = 0 AND dy = 0) THEN
+                i = x + dx
+                j = y + dy
+                IF i >= 1 AND i <= BOARDSIZE AND j >= 1 AND j <= BOARDSIZE THEN
+                    IF board(i, j) = oppstone THEN
+                        i = i + dx
+                        j = j + dy
+                        DO WHILE i >= 1 AND i <= BOARDSIZE AND j >= 1 AND j <= BOARDSIZE
+                            IF board(i, j) = stone THEN
+                                flipped = flipped + ABS(x - i) + ABS(y - j) - 1
+                                EXIT DO
+                            ELSEIF board(i, j) = BLANK THEN
+                                EXIT DO
+                            END IF
+                            i = i + dx
+                            j = j + dy
+                        LOOP
+                    END IF
+                END IF
+            END IF
+        NEXT dy
+    NEXT dx
+   
+    score = score + flipped
+   
+    IF (x = 1 AND y = 1) OR (x = 1 AND y = BOARDSIZE) OR (x = BOARDSIZE AND y = 1) OR (x = BOARDSIZE AND y = BOARDSIZE) THEN
+        score = score + 100
+    END IF
+   
+    IF x = 1 OR x = BOARDSIZE OR y = 1 OR y = BOARDSIZE THEN
+        score = score + 10
+    END IF
+   
+    IF (x = 2 AND y = 2) OR (x = 2 AND y = BOARDSIZE - 1) OR (x = BOARDSIZE - 1 AND y = 2) OR (x = BOARDSIZE - 1 AND y = BOARDSIZE - 1) THEN
+        score = score - 50
+    END IF
+   
+    IF (x = 1 AND (y = 2 OR y = BOARDSIZE - 1)) OR (x = BOARDSIZE AND (y = 2 OR y = BOARDSIZE - 1)) OR (y = 1 AND (x = 2 OR x = BOARDSIZE - 1)) OR (y = BOARDSIZE AND (x = 2 OR x = BOARDSIZE - 1)) THEN
+        score = score - 30
+    END IF
+   
+    IF x >= 3 AND x <= BOARDSIZE - 2 AND y >= 3 AND y <= BOARDSIZE - 2 THEN
+        score = score + 5
+    END IF
+   
+    EvaluatePosition = score
+END FUNCTION
+
 SUB FaceShow (nowside AS INTEGER, facetype AS INTEGER)
     DIM forecolor AS INTEGER
     DIM backcolor AS INTEGER
@@ -984,16 +619,218 @@ SUB FaceShow (nowside AS INTEGER, facetype AS INTEGER)
     END IF
 END SUB
 
-FUNCTION LetterRange$ (startchar AS STRING, endchar AS STRING)
+SUB FinalizeGameRecord (record AS GAMERECORD, winside AS INTEGER, stonenum() AS INTEGER, endreason AS STRING)
+    record.winner = winside
+    record.blackstones = stonenum(BLACKSIDE)
+    record.whitestones = stonenum(WHITESIDE)
+    record.endreason = endreason
+END SUB
+
+FUNCTION FormatDateYYYYMMDD$ (datestr AS STRING)
+    DIM MonthDayPart AS STRING
+    DIM YearPart AS STRING
+   
+    YearPart = RIGHT$(datestr, 4)
+    MonthDayPart = LEFT$(datestr, 5)
+   
+    FormatDateYYYYMMDD = YearPart + "-" + MonthDayPart
+END FUNCTION
+
+SUB GetBoardInput (x AS INTEGER, y AS INTEGER, confirmed AS INTEGER, nowside AS INTEGER, board() AS INTEGER)
+    CONST twinkletime = 1 / 3
+    DIM keycode AS INTEGER
+    DIM cursorvisible AS INTEGER
+    DIM lastblinktime AS SINGLE
+    DIM needredraw AS INTEGER
+    
+    confirmed = FALSE
+    cursorvisible = SHOW
+    lastblinktime = TIMER
+    needredraw = TRUE
+    
+    DO
+        IF TIMER - lastblinktime >= twinkletime THEN
+            cursorvisible = 1 - cursorvisible
+            needredraw = TRUE
+            lastblinktime = TIMER
+        END IF
+        
+        IF needredraw THEN
+            CALL LightMark(nowside, board(x, y), x, y, cursorvisible)
+            needredraw = FALSE
+        END IF
+        
+        keycode = GetRawKey
+        
+        IF keycode > 0 THEN
+            CALL LightMark(nowside, board(x, y), x, y, DISAPPEAR)
+            
+            SELECT CASE keycode
+                CASE KEYLEFT
+                    x = x - 1
+                    IF x < 1 THEN x = BOARDSIZE
+                CASE KEYRIGHT
+                    x = x + 1
+                    IF x > BOARDSIZE THEN x = 1
+                CASE KEYUP
+                    y = y + 1
+                    IF y > BOARDSIZE THEN y = 1
+                CASE KEYDOWN
+                    y = y - 1
+                    IF y < 1 THEN y = BOARDSIZE
+                CASE KEYENTER
+                    confirmed = TRUE
+                    EXIT DO
+            END SELECT
+            needredraw = TRUE
+        END IF
+    LOOP
+    
+    CALL LightMark(nowside, board(x, y), x, y, DISAPPEAR)
+END SUB
+
+FUNCTION GetInputWithBlink$ (prompt AS STRING, row AS INTEGER, col AS INTEGER, maxlen AS INTEGER, acceptkeys AS STRING, waitenter AS INTEGER)
+    CONST twinkletime = 1 / 6
+    DIM reftime AS SINGLE
+    DIM timebalance AS SINGLE
+    DIM cw AS STRING * 1
+    DIM ct AS STRING * 1
+    DIM keycode AS INTEGER
+    DIM keychar AS STRING
     DIM result AS STRING
     DIM i AS INTEGER
     
     result = ""
-    FOR i = ASC(startchar) TO ASC(endchar)
-        result = result + CHR$(i)
-    NEXT i
-    LetterRange = result
+    i = 0
+    cw = "?"
+    ct = " "
+    reftime = TIMER
+    
+    DO
+        LOCATE row, col: PRINT prompt + result + cw + SPACE$(maxlen - LEN(prompt + result + cw));
+        
+        timebalance = TIMER - reftime
+        timebalance = timebalance + DAY
+        timebalance = timebalance - FIX(timebalance / DAY) * DAY
+        IF timebalance >= twinkletime THEN
+            SWAP cw, ct
+            reftime = TIMER
+        END IF
+        
+        keycode = GetRawKey
+        
+        IF keycode > 0 AND keycode < 256 THEN
+            keychar = CHR$(keycode)
+            IF keycode = KEYENTER THEN
+                EXIT DO
+            ELSEIF keycode = KEYBACKSPACE AND i > 0 THEN
+                i = i - 1
+                result = LEFT$(result, i)
+            ELSEIF INSTR(acceptkeys, keychar) > 0 THEN
+                result = result + keychar
+                i = i + 1
+                IF waitenter = FALSE THEN
+                    EXIT DO
+                END IF
+            END IF
+        END IF
+    LOOP UNTIL i = maxlen
+
+    GetInputWithBlink = result
 END FUNCTION
+
+FUNCTION GetRawKey
+    DIM check AS STRING
+    
+    check = INKEY$
+    IF check = "" THEN
+        GetRawKey = 0
+    ELSE
+        IF ASC(check) = 0 AND LEN(check) > 1 THEN
+            GetRawKey = ASC(MID$(check, 2, 1)) + 256
+        ELSE
+            GetRawKey = ASC(check)
+        END IF
+    END IF
+END FUNCTION
+
+FUNCTION GetValidMoves (nowside AS INTEGER, board() AS INTEGER, moves() AS MOVE)
+    DIM x AS INTEGER, y AS INTEGER
+    DIM count AS INTEGER
+   
+    count = 0
+    FOR x = 1 TO BOARDSIZE
+        FOR y = 1 TO BOARDSIZE
+            IF board(x, y) = BLANK THEN
+                IF CheckPlace(nowside, board(), x, y) THEN
+                    count = count + 1
+                    moves(count).x = x
+                    moves(count).y = y
+                END IF
+            END IF
+        NEXT y
+    NEXT x
+   
+    GetValidMoves = count
+END FUNCTION
+
+SUB HumanThink (nowside AS INTEGER, board() AS INTEGER, x AS INTEGER, y AS INTEGER)
+    SHARED timetrap AS INTEGER
+    DIM confirmed AS INTEGER
+    DIM validmove AS INTEGER
+    
+    TIMER ON
+    
+    LOCATE MESSAGE1ROW, 1
+    PRINT SPACE$(MSGLINEWIDTH);
+    
+    DO
+        confirmed = FALSE
+        CALL GetBoardInput(x, y, confirmed, nowside, board())
+        
+        IF confirmed THEN
+            validmove = CheckPlace(nowside, board(), x, y)
+            
+            IF validmove THEN
+                EXIT DO
+            ELSE
+                BEEP
+            END IF
+        END IF
+    LOOP
+    
+    IF nowside = BLACKSIDE THEN
+        board(x, y) = BLACKSTONE
+    ELSEIF nowside = WHITESIDE THEN
+        board(x, y) = WHITESTONE
+    END IF
+    
+    TIMER OFF
+    CALL StoneShow(board(x, y), x, y)
+END SUB
+
+SUB InitGameRecord (record AS GAMERECORD, bothname() AS PLAYDATA)
+    DIM i as INTEGER
+    
+    record.version = RECORDVERSION
+    record.blackname = bothname(BLACKSIDE).playname
+    record.whitename = bothname(WHITESIDE).playname
+    record.blacktype = bothname(BLACKSIDE).playtype
+    record.whitetype = bothname(WHITESIDE).playtype
+    record.movecount = 0
+    record.winner = EQUAL
+    record.blackstones = 0
+    record.whitestones = 0
+    record.gamedate = FormatDateYYYYMMDD$(DATE$)
+    record.gametime = TIME$
+    record.endreason = "NORMAL_END"
+   
+    FOR i = 1 TO MAXMOVES
+        recordmovesx(i) = 0
+        recordmovesy(i) = 0
+        recordmovesside(i) = 0
+    NEXT i
+END SUB
 
 SUB InputName (humanside AS INTEGER, bothname() AS PLAYDATA)
     CONST BLACKW = 1
@@ -1019,8 +856,18 @@ SUB InputName (humanside AS INTEGER, bothname() AS PLAYDATA)
     LOCATE w, h: PRINT bothname(humanside).playname
 END SUB
 
+FUNCTION LetterRange$ (startchar AS STRING, endchar AS STRING)
+    DIM result AS STRING
+    DIM i AS INTEGER
+    
+    result = ""
+    FOR i = ASC(startchar) TO ASC(endchar)
+        result = result + CHR$(i)
+    NEXT i
+    LetterRange = result
+END FUNCTION
+
 SUB LightMark (nowside AS INTEGER, background AS INTEGER, x AS INTEGER, y AS INTEGER, cursor AS INTEGER)
-    CALL TrapControl(TRAPOFF)
     CALL ReversiScreen(BOARDSCREEN, USE)
     IF cursor = SHOW THEN
         IF background = BLANK THEN
@@ -1043,52 +890,6 @@ SUB LightMark (nowside AS INTEGER, background AS INTEGER, x AS INTEGER, y AS INT
         ELSEIF background = WHITESTONE THEN
             PAINT (x - .5, y - .5), WHITE, WHITE
         END IF
-    END IF
-    CALL TrapControl(TRAPON)
-END SUB
-
-SUB ReversiScreen (screentype AS INTEGER, screenstate AS INTEGER)
-    SHARED nowscreen AS INTEGER
-
-    DIM i AS INTEGER
-
-    IF screentype = BLACKSTATESCREEN THEN
-        IF screenstate = SET THEN
-            nowscreen = BLACKSTATESCREEN
-            VIEW (1, 18)-(120, 77), BLUE, WHITE
-            WINDOW (1, 1)-(50, 30)
-        ELSEIF screenstate = USE AND nowscreen <> BLACKSTATESCREEN THEN
-            nowscreen = BLACKSTATESCREEN
-            VIEW (1, 18)-(120, 77)
-            WINDOW (1, 1)-(50, 30)
-        END IF
-    ELSEIF screentype = WHITESTATESCREEN THEN
-        IF screenstate = SET THEN
-            nowscreen = WHITESTATESCREEN
-            VIEW (1, 98)-(120, 157), BLUE, WHITE
-            WINDOW (1, 1)-(50, 30)
-        ELSEIF screenstate = USE AND nowscreen <> WHITESTATESCREEN THEN
-            nowscreen = WHITESTATESCREEN
-            VIEW (1, 98)-(120, 157)
-            WINDOW (1, 1)-(50, 30)
-        END IF
-    ELSEIF screentype = BOARDSCREEN THEN
-        IF screenstate = SET THEN
-            nowscreen = BOARDSCREEN
-            VIEW (126, 1)-(318, 161), BLUE, WHITE
-            WINDOW (0, 0)-(BOARDSIZE, BOARDSIZE)
-            FOR i = 0 TO BOARDSIZE
-                LINE (i, 0)-(i, BOARDSIZE), BLACK
-            NEXT i
-            FOR i = 0 TO BOARDSIZE
-                LINE (0, i)-(BOARDSIZE, i), BLACK
-            NEXT i
-        ELSEIF screenstate = USE AND nowscreen <> BOARDSCREEN THEN
-            nowscreen = BOARDSCREEN
-            VIEW (126, 1)-(318, 161)
-            WINDOW (0, 0)-(BOARDSIZE, BOARDSIZE)
-        END IF
-    ELSEIF screentype = BUTTONSCREEN THEN
     END IF
 END SUB
 
@@ -1122,7 +923,7 @@ END SUB
 SUB Quit (choose AS INTEGER)
     DIM check AS STRING
     
-    check = UCASE$(GetInputWithBlink("Quit(Y/N)", MESSAGE2ROW, 1, 1, "YNyn", FALSE))
+    check = UCASE$(GetInputWithBlink("Quit(Y/N)", MESSAGE2ROW, 1, MESSAGE1ROW, "YNyn", FALSE))
     
     IF check = "Y" THEN
         choose = FINISH
@@ -1171,6 +972,141 @@ SUB RandomSide (gameorder AS INTEGER, bothname() AS PLAYDATA)
     END IF
 END SUB
 
+SUB ReversiScreen (screentype AS INTEGER, screenstate AS INTEGER)
+    SHARED nowscreen AS INTEGER
+
+    DIM i AS INTEGER
+
+    IF screentype = BLACKSTATESCREEN THEN
+        IF screenstate = SET THEN
+            nowscreen = BLACKSTATESCREEN
+            VIEW (1, 18)-(120, 77), BLUE, WHITE
+            WINDOW (1, 1)-(50, 30)
+        ELSEIF screenstate = USE AND nowscreen <> BLACKSTATESCREEN THEN
+            nowscreen = BLACKSTATESCREEN
+            VIEW (1, 18)-(120, 77)
+            WINDOW (1, 1)-(50, 30)
+        END IF
+    ELSEIF screentype = WHITESTATESCREEN THEN
+        IF screenstate = SET THEN
+            nowscreen = WHITESTATESCREEN
+            VIEW (1, 98)-(120, 157), BLUE, WHITE
+            WINDOW (1, 1)-(50, 30)
+        ELSEIF screenstate = USE AND nowscreen <> WHITESTATESCREEN THEN
+            nowscreen = WHITESTATESCREEN
+            VIEW (1, 98)-(120, 157)
+            WINDOW (1, 1)-(50, 30)
+        END IF
+    ELSEIF screentype = BOARDSCREEN THEN
+        IF screenstate = SET THEN
+            nowscreen = BOARDSCREEN
+            VIEW (126, 1)-(318, 161), BLUE, WHITE
+            WINDOW (0, 0)-(BOARDSIZE, BOARDSIZE)
+            FOR i = 0 TO BOARDSIZE
+                LINE (i, 0)-(i, BOARDSIZE), BLACK
+            NEXT i
+            FOR i = 0 TO BOARDSIZE
+                LINE (0, i)-(BOARDSIZE, i), BLACK
+            NEXT i
+        ELSEIF screenstate = USE AND nowscreen <> BOARDSCREEN THEN
+            nowscreen = BOARDSCREEN
+            VIEW (126, 1)-(318, 161)
+            WINDOW (0, 0)-(BOARDSIZE, BOARDSIZE)
+        END IF
+    ELSEIF screentype = BUTTONSCREEN THEN
+    END IF
+END SUB
+
+SUB SaveGameRecord (record AS GAMERECORD)
+    DIM fileNum AS INTEGER
+    DIM i AS INTEGER
+    DIM blackname AS STRING
+    DIM whitename AS STRING
+    DIM resulttext AS STRING
+    DIM sidechar AS STRING
+    DIM colletter AS STRING
+    DIM rownum AS STRING
+    DIM reasontext AS STRING
+   
+    fileNum = FREEFILE
+   
+    OPEN RECORDFILENAME FOR APPEND AS fileNum
+   
+    blackname = RTRIM$(record.blackname)
+    whitename = RTRIM$(record.whitename)
+    IF blackname = "" THEN blackname = "Black"
+    IF whitename = "" THEN whitename = "White"
+   
+    PRINT #fileNum, "=============================="
+    PRINT #fileNum, "Version: "; LTRIM$(STR$(record.version))
+    PRINT #fileNum, "Game: "; record.gamedate; " "; record.gametime
+    PRINT #fileNum, "Players:"
+    PRINT #fileNum, "  Black: "; blackname;
+    IF record.blacktype = COMPUTER THEN PRINT #fileNum, " (Computer)" ELSE PRINT #fileNum, " (Human)"
+    PRINT #fileNum, "  White: "; whitename;
+    IF record.whitetype = COMPUTER THEN PRINT #fileNum, " (Computer)" ELSE PRINT #fileNum, " (Human)"
+    PRINT #fileNum, "Board: "; LTRIM$(STR$(BOARDSIZE)); "x"; LTRIM$(STR$(BOARDSIZE))
+    PRINT #fileNum, ""
+   
+    PRINT #fileNum, "Moves ("; record.movecount; "moves):"
+   
+    FOR i = 1 TO record.movecount
+        IF recordmovesside(i) = BLACKSIDE THEN
+            sidechar = "Black"
+        ELSE
+            sidechar = "White"
+        END IF
+      
+        colletter = CHR$(ASC("a") + (recordmovesx(i) - 1))
+        rownum = LTRIM$(STR$(recordmovesy(i)))
+      
+        IF i MOD 2 = 1 THEN
+            PRINT #fileNum, USING "####: & &&"; i; sidechar; colletter; rownum;
+        ELSE
+            PRINT #fileNum, USING " - & &&"; sidechar; colletter; rownum
+        END IF
+    NEXT i
+   
+    IF record.movecount MOD 2 = 1 THEN
+        PRINT #fileNum, ""
+    END IF
+   
+    PRINT #fileNum, ""
+    PRINT #fileNum, "Result:"
+   
+    SELECT CASE record.winner
+        CASE BLACKWIN
+            resulttext = "Black wins"
+        CASE WHITEWIN
+            resulttext = "White wins"
+        CASE EQUAL
+            resulttext = "Draw"
+    END SELECT
+   
+    PRINT #fileNum, "  "; resulttext
+    PRINT #fileNum, "  Black stones: "; LTRIM$(STR$(record.blackstones))
+    PRINT #fileNum, "  White stones: "; LTRIM$(STR$(record.whitestones))
+    PRINT #fileNum, "  Final score: "; LTRIM$(STR$(record.blackstones)); " - "; LTRIM$(STR$(record.whitestones))
+    SELECT CASE record.endreason
+        CASE "NORMAL_END"
+            reasontext = "Normal end"
+        CASE "TIME_OUT"
+            reasontext = "Time out"
+        CASE "RESIGN"
+            reasontext = "Resignation"
+    END SELECT
+    PRINT #fileNum, "  End reason: "; reasontext
+    PRINT #fileNum, "=============================="
+    PRINT #fileNum, ""
+   
+    CLOSE fileNum
+   
+    LOCATE MESSAGE1ROW, 1
+    PRINT SPACE$(MSGLINEWIDTH);
+    LOCATE MESSAGE1ROW, 1
+    PRINT "Game saved to "; RECORDFILENAME
+END SUB
+
 SUB StoneNumShow (board() AS INTEGER, stonenum() AS INTEGER)
     SHARED nn AS STRING
   
@@ -1203,59 +1139,6 @@ SUB StoneShow (stone AS INTEGER, x AS INTEGER, y AS INTEGER)
         PAINT (x - .5, y - .5), WHITE, WHITE
     END IF
 
-END SUB
-
-SUB TrapControl (control AS INTEGER) STATIC
-    SHARED timetrap AS INTEGER
-    SHARED keytrap AS INTEGER
-
-    DIM n AS INTEGER
-    DIM timetrapstack(1 TO 64) AS INTEGER
-    DIM keytrapstack(1 TO 64) AS INTEGER
-  
-    IF control = TRAPINIT THEN
-        FOR n = 1 TO 64
-            timetrapstack(n) = EVENTOFF
-            keytrapstack(n) = EVENTOFF
-        NEXT n
-        n = 0
-    ELSEIF control = TRAPOFF THEN
-        n = n + 1
-        timetrapstack(n) = timetrap
-        IF timetrap = EVENTON THEN
-            TIMER STOP
-            timetrap = EVENTSTOP
-        END IF
-        keytrapstack(n) = keytrap
-        IF keytrap = EVENTON THEN
-            KEY(10) STOP
-            keytrap = EVENTSTOP
-        END IF
-    ELSEIF control = TRAPON THEN
-        SELECT CASE timetrapstack(n)
-            CASE EVENTOFF
-                TIMER OFF
-                timetrap = EVENTOFF
-            CASE EVENTSTOP
-                TIMER STOP
-                timetrap = EVENTSTOP
-            CASE EVENTON
-                timetrap = EVENTON
-                TIMER ON
-        END SELECT
-        SELECT CASE keytrapstack(n)
-            CASE EVENTOFF
-                KEY(10) OFF
-                keytrap = EVENTOFF
-            CASE EVENTSTOP
-                KEY(10) STOP
-                keytrap = EVENTSTOP
-            CASE EVENTON
-                keytrap = EVENTON
-                KEY(10) ON
-        END SELECT
-        n = n - 1
-    END IF
 END SUB
 
 SUB TurnStone (board() AS INTEGER, x AS INTEGER, y AS INTEGER)
