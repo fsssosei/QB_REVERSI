@@ -170,6 +170,7 @@ DO
         ELSEIF bothname(nowside).playtype = COMPUTER THEN
             CALL ComputerThink(nowside, board(), x, y)
         END IF
+        CALL clock(nowside, REST, FALSE, unitime(), extratime(), notime)
         CALL FaceShow(nowside, REPOSE)
         CALL TurnStone(board(), x, y)
         CALL StoneNumShow(board(), stonenum())
@@ -1207,4 +1208,5 @@ FUNCTION WinSideJudge (nowside AS INTEGER, notime AS INTEGER, accpetlose AS INTE
             END IF
         END IF
     END IF
+
 END FUNCTION
