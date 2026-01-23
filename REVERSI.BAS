@@ -374,7 +374,7 @@ SUB Clock (nowside AS INTEGER, clockstate AS INTEGER, recoverscreen AS INTEGER, 
     END IF
     IF unitclockface = TRUE THEN
         CIRCLE (11, 11), 10, WHITE: PAINT (11, 11), BLACK, WHITE
-        CIRCLE (11, 11), .5, WHITE
+        CIRCLE (11, 11), 0.5, WHITE
         FOR a = ZEROOFCLOCKANGLE TO ZEROOFCLOCKANGLE - CIRCLEANGLE STEP -(CIRCLEANGLE / HALFDAY)
             LINE (9 * COS(a) + 11, 9 * SIN(a) + 11)-(8.5 * COS(a) + 11, 8.5 * SIN(a) + 11), WHITE
         NEXT a
@@ -418,7 +418,7 @@ SUB Clock (nowside AS INTEGER, clockstate AS INTEGER, recoverscreen AS INTEGER, 
     END IF
     IF extraclockface = TRUE THEN
         CIRCLE (35, 15.5), 14, WHITE: PAINT (35, 15.5), BLACK, WHITE
-        CIRCLE (35, 15.5), .5, WHITE
+        CIRCLE (35, 15.5), 0.5, WHITE
         FOR a = ZEROOFCLOCKANGLE TO ZEROOFCLOCKANGLE - CIRCLEANGLE STEP -(CIRCLEANGLE / HALFDAY)
             LINE (13.5 * COS(a) + 35, 13.5 * SIN(a) + 15.5)-(12 * COS(a) + 35, 12 * SIN(a) + 15.5), WHITE
         NEXT a
@@ -494,7 +494,7 @@ SUB ComputerThink (nowside AS INTEGER, board() AS INTEGER, x AS INTEGER, y AS IN
     NEXT i
    
     RANDOMIZE TIMER
-    IF RND < .2 THEN
+    IF RND < 0.2 THEN
         bestmove = INT(RND * movecount) + 1
     END IF
    
@@ -602,20 +602,20 @@ SUB FaceShow (nowside AS INTEGER, facetype AS INTEGER)
     PAINT (6, 25), BLUE, RED
     PAINT (6, 25), backcolor, RED
     IF facetype = THINK THEN
-        CIRCLE (4.8, 26), .6, forecolor
-        CIRCLE (7.2, 26), .6, forecolor
+        CIRCLE (4.8, 26), 0.6, forecolor
+        CIRCLE (7.2, 26), 0.6, forecolor
         LINE (5, 23)-(7, 23), forecolor
     ELSEIF facetype = LOSE THEN
-        CIRCLE (4.8, 26), .6, forecolor
-        CIRCLE (7.2, 26), .6, forecolor
+        CIRCLE (4.8, 26), 0.6, forecolor
+        CIRCLE (7.2, 26), 0.6, forecolor
         CIRCLE (6, 21), 2.4, forecolor, 60 * DEGREE, 120 * DEGREE
     ELSEIF facetype = QUIET THEN
-        CIRCLE (4.8, 26), .6, forecolor
-        CIRCLE (7.2, 26), .6, forecolor
-        CIRCLE (6, 23), 1, forecolor, , , .4
+        CIRCLE (4.8, 26), 0.6, forecolor
+        CIRCLE (7.2, 26), 0.6, forecolor
+        CIRCLE (6, 23), 1, forecolor, , , 0.4
     ELSEIF facetype = WIN THEN
-        CIRCLE (4.8, 26), .6, forecolor
-        CIRCLE (7.2, 26), .6, forecolor
+        CIRCLE (4.8, 26), 0.6, forecolor
+        CIRCLE (7.2, 26), 0.6, forecolor
         CIRCLE (6, 25), 2, forecolor, 240 * DEGREE, 300 * DEGREE
     END IF
 END SUB
@@ -873,23 +873,23 @@ SUB LightMark (nowside AS INTEGER, background AS INTEGER, x AS INTEGER, y AS INT
     IF cursor = SHOW THEN
         IF background = BLANK THEN
             IF nowside = BLACKSIDE THEN
-                CIRCLE (x - .5, y - .5), .2, BLACK
-                PAINT (x - .5, y - .5), BLACK, BLACK
+                CIRCLE (x - 0.5, y - 0.5), 0.2, BLACK
+                PAINT (x - 0.5, y - 0.5), BLACK, BLACK
             ELSEIF nowside = WHITESIDE THEN
-                CIRCLE (x - .5, y - .5), .2, WHITE
-                PAINT (x - .5, y - .5), WHITE, WHITE
+                CIRCLE (x - 0.5, y - 0.5), 0.2, WHITE
+                PAINT (x - 0.5, y - 0.5), WHITE, WHITE
             END IF
         ELSE
-            CIRCLE (x - .5, y - .5), .2, RED
-            PAINT (x - .5, y - .5), RED, RED
+            CIRCLE (x - 0.5, y - 0.5), 0.2, RED
+            PAINT (x - 0.5, y - 0.5), RED, RED
         END IF
     ELSEIF cursor = DISAPPEAR THEN
         IF background = BLANK THEN
-            PAINT (x - .5, y - .5), BLUE, BLUE
+            PAINT (x - 0.5, y - 0.5), BLUE, BLUE
         ELSEIF background = BLACKSTONE THEN
-            PAINT (x - .5, y - .5), BLACK, BLACK
+            PAINT (x - 0.5, y - 0.5), BLACK, BLACK
         ELSEIF background = WHITESTONE THEN
-            PAINT (x - .5, y - .5), WHITE, WHITE
+            PAINT (x - 0.5, y - 0.5), WHITE, WHITE
         END IF
     END IF
 END SUB
@@ -955,7 +955,7 @@ SUB RandomSide (gameorder AS INTEGER, bothname() AS PLAYDATA)
             bothname(WHITESIDE).playtype = HUMAN
         ELSE
             RANDOMIZE TIMER
-            IF RND < .5 THEN
+            IF RND < 0.5 THEN
                 bothname(BLACKSIDE).playname = ""
                 bothname(BLACKSIDE).playtype = HUMAN
                 bothname(WHITESIDE).playname = COMPUTERNAME
@@ -1133,11 +1133,11 @@ SUB StoneShow (stone AS INTEGER, x AS INTEGER, y AS INTEGER)
   
     CALL ReversiScreen(BOARDSCREEN, USE)
     IF stone = BLACKSTONE THEN
-        CIRCLE (x - .5, y - .5), .4, BLACK
-        PAINT (x - .5, y - .5), BLACK, BLACK
+        CIRCLE (x - 0.5, y - 0.5), 0.4, BLACK
+        PAINT (x - 0.5, y - 0.5), BLACK, BLACK
     ELSEIF stone = WHITESTONE THEN
-        CIRCLE (x - .5, y - .5), .4, WHITE
-        PAINT (x - .5, y - .5), WHITE, WHITE
+        CIRCLE (x - 0.5, y - 0.5), 0.4, WHITE
+        PAINT (x - 0.5, y - 0.5), WHITE, WHITE
     END IF
 
 END SUB
